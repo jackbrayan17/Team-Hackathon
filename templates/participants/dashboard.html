@@ -1,0 +1,370 @@
+{% extends "base.html" %}
+{% load participant_extras %}
+{% block title %}Hackathon Teams{% endblock %}
+{% block heading %}Hackathon EEUEZ - Upload & Teams{% endblock %}
+
+{% block content %}
+<input type="hidden" id="csrfToken" value="{{ csrf_token }}">
+<div class="tabs">
+    <button class="tab-button active" data-tab-target="tab-upload"><i class="fa-solid fa-upload"></i> Importer</button>
+    <button class="tab-button" data-tab-target="tab-processed"><i class="fa-solid fa-envelope-circle-check"></i> Donnees traitees</button>
+    <button class="tab-button" data-tab-target="tab-teams"><i class="fa-solid fa-people-group"></i> Equipes</button>
+    <button class="tab-button" data-tab-target="tab-mentors"><i class="fa-solid fa-user-tie"></i> Encadrants</button>
+</div>
+
+<div class="tab-content active" id="tab-upload">
+    <div class="card">
+        <form method="post" enctype="multipart/form-data" id="uploadForm">
+            {% csrf_token %}
+            <label for="{{ upload_form.file.id_for_label }}">Importer un fichier Excel</label>
+            <label class="upload-area" for="{{ upload_form.file.id_for_label }}">
+                <i class="fa-solid fa-file-excel" style="font-size:28px; color: var(--accent);"></i>
+                <div style="font-weight:600; margin-top:6px;">Glissez-deposez ou cliquez pour choisir</div>
+                <div class="muted" style="margin-top:4px;">Acceptes: .xlsx / .xls</div>
+            </label>
+            {{ upload_form.file }}
+            <p class="muted" style="margin:8px 0 0;">{{ upload_form.file.help_text }}</p>
+            {% if upload_form.errors %}
+                <div class="message error">{{ upload_form.errors }}</div>
+            {% endif %}
+            <div class="actions">
+                <button type="submit"><i class="fa-solid fa-eye"></i> Charger et previsualiser</button>
+                {% if rows %}
+                    <button type="button" class="secondary" id="resetBtn"><i class="fa-solid fa-rotate"></i> Reinitialiser</button>
+                {% endif %}
+            </div>
+            <input type="hidden" name="action" value="">
+        </form>
+    </div>
+
+    {% if rows %}
+        <div class="card">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <h3 style="margin:0;">Previsualisation des participants</h3>
+                    <p class="muted" style="margin:4px 0 0;">Jusqu'a 50 lignes affichees.</p>
+                </div>
+                <div class="actions" style="margin:0;">
+                    <button type="button" id="sendEmailsBtn"><i class="fa-solid fa-paper-plane"></i> Envoyer emails + Excel</button>
+                    <a href="{% url 'export_excel' %}" class="tab-button" style="text-decoration:none;"><i class="fa-solid fa-file-arrow-down"></i> Telecharger Excel</a>
+                </div>
+            </div>
+
+            <div style="overflow-x:auto; margin-top:10px;">
+                <table>
+                    <thead>
+                    <tr>
+                        {% for col in columns %}
+                            <th>{{ col }}</th>
+                        {% endfor %}
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for row in rows %}
+                        <tr>
+                            {% for col in columns %}
+                                <td>{{ row|get_item:col }}</td>
+                            {% endfor %}
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    {% endif %}
+</div>
+
+<div class="tab-content" id="tab-processed">
+    <div class="card">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div>
+                <h3 style="margin:0;">Participants et statut email</h3>
+                <p class="muted" style="margin:4px 0 0;">Visualisez qui a deja recu un email.</p>
+            </div>
+        </div>
+        {% if participants %}
+            <div style="overflow-x:auto; margin-top:10px;">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Nom</th>
+                        <th>Email</th>
+                        <th>Langue</th>
+                        <th>Equipe</th>
+                        <th>Statut</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for p in participants %}
+                        <tr>
+                            <td>{{ p.full_name }}</td>
+                            <td>{{ p.email }}</td>
+                            <td>{{ p.language_raw }}</td>
+                            <td>{{ p.team.display_name|default:p.team.code|default:"Non assigne" }}</td>
+                            <td>
+                                {% if p.email_sent %}
+                                    <span class="badge success"><i class="fa-solid fa-check"></i> Envoye</span>
+                                {% else %}
+                                    <span class="badge error"><i class="fa-solid fa-clock"></i> A envoyer</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="muted">Importez d'abord un fichier pour voir les donnees.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="tab-content" id="tab-teams">
+    <div class="card">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+            <div>
+                <h3 style="margin:0;">Equipes (max 10, 5 pers. chacune)</h3>
+                <p class="muted" style="margin:4px 0 0;">Nommer une equipe et visualiser la premiere competence de chaque membre.</p>
+            </div>
+            <div class="actions" style="margin:0;">
+                <button type="button" id="renameTeamBtn"><i class="fa-solid fa-signature"></i> Nommer une equipe</button>
+            </div>
+        </div>
+        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top:14px;">
+            {% for team in teams %}
+                <div class="card" style="padding:16px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between;">
+                        <div>
+                            <div class="pill"><i class="fa-solid fa-flag"></i> {{ team.display_name }}</div>
+                            <div class="muted" style="margin-top:4px;">{{ team.name }}</div>
+                        </div>
+                        <div class="badge info">{{ team.members|length }} / 5</div>
+                    </div>
+                    <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+                        {% if team.mentor %}
+                            <span class="chip"><i class="fa-solid fa-user-tie"></i> {{ team.mentor.name|default:"Encadrant" }}</span>
+                            {% if team.mentor.email %}<span class="badge info">{{ team.mentor.email }}</span>{% endif %}
+                        {% else %}
+                            <span class="chip"><i class="fa-solid fa-user-tie"></i> Encadrant non assigne</span>
+                        {% endif %}
+                    </div>
+                    {% if team.members %}
+                        <ul style="list-style:none; padding-left:0; margin:12px 0 0;">
+                            {% for member in team.members %}
+                                <li style="padding:8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+                                        <div>
+                                            <strong>{{ member|get_item:"NOM ET PRENOM"|default:member|get_item:"Nom" }}</strong>
+                                            {% if member.is_leader %}<span class="badge info" style="margin-left:6px;"><i class="fa-solid fa-crown"></i> Chef</span>{% endif %}
+                                            <div class="muted" style="margin-top:4px;">{{ member.team_display|default:team.display_name }}</div>
+                                        </div>
+                                        <div class="chip">
+                                            <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                            {{ member.skills_list.0|default:"Competence" }}
+                                        </div>
+                                    </div>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p class="muted" style="margin-top:10px;">Pas encore de membres.</p>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="tab-content" id="tab-mentors">
+    <div class="card">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+            <div>
+                <h3 style="margin:0;">Encadrants</h3>
+                <p class="muted" style="margin:4px 0 0;">Attribuez un encadrant a une equipe.</p>
+            </div>
+        </div>
+        <form method="post" id="mentorForm" style="margin-top:12px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_mentor">
+            <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+                <div>
+                    <label for="mentor_name">Nom</label>
+                    <input type="text" name="mentor_name" id="mentor_name" placeholder="Nom complet" style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.04); color: var(--text);">
+                </div>
+                <div>
+                    <label for="mentor_email">Email</label>
+                    <input type="email" name="mentor_email" id="mentor_email" placeholder="email@exemple.com" style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.04); color: var(--text);">
+                </div>
+                <div>
+                    <label for="mentor_team">Equipe</label>
+                    <select name="mentor_team" id="mentor_team" style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.04); color: var(--text);">
+                        {% for team in teams %}
+                            <option value="{{ team.name }}">{{ team.display_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="actions" style="justify-content:flex-end; margin-top:14px;">
+                <button type="submit"><i class="fa-solid fa-user-plus"></i> Ajouter</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3 style="margin:0;">Encadrants assignes</h3>
+        {% if team_encadrants %}
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; margin-top:10px;">
+                {% for name, mentor in team_encadrants.items %}
+                    <div class="pill" style="width:100%; justify-content:space-between;">
+                        <span><i class="fa-solid fa-flag"></i> {{ name }}</span>
+                        <span><i class="fa-solid fa-user-tie"></i> {{ mentor.name|default:"Encadrant" }}</span>
+                        {% if mentor.email %}<span class="badge info">{{ mentor.email }}</span>{% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="muted" style="margin-top:8px;">Aucun encadrant defini.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Modals -->
+<div class="modal-backdrop" id="sendModal">
+    <div class="modal">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+            <h3 style="margin:0;"><i class="fa-solid fa-paper-plane"></i> Envoi des emails</h3>
+            <button type="button" class="secondary" id="closeSendModal"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div style="margin-top:10px;">
+            <label for="senderEmail">Adresse d'envoi</label>
+            <select id="senderEmail" style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.04); color: var(--text);">
+                {% for sender in sender_choices %}
+                    <option value="{{ sender }}">{{ sender }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div style="margin-top:12px;">
+            <div class="progress" id="sendProgress"><span></span></div>
+            <div class="muted" id="sendProgressLabel">En attente...</div>
+        </div>
+        <div id="sendResults" style="max-height:220px; overflow-y:auto; margin-top:10px;"></div>
+        <div class="actions" style="justify-content:flex-end; margin-top:14px;">
+            <a href="{% url 'export_excel' %}" class="tab-button" style="text-decoration:none;" id="downloadLink"><i class="fa-solid fa-file-arrow-down"></i> Telecharger Excel</a>
+        </div>
+    </div>
+</div>
+
+<div class="modal-backdrop" id="renameModal">
+    <div class="modal">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+            <h3 style="margin:0;"><i class="fa-solid fa-signature"></i> Nommer une equipe</h3>
+            <button type="button" class="secondary" id="closeRenameModal"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form method="post" id="renameForm" style="margin-top:12px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="rename_team">
+            <label for="team_name">Equipe</label>
+            <select name="team_name" id="team_name" style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.04); color: var(--text);">
+                {% for team in teams %}
+                    <option value="{{ team.name }}">{{ team.name }}</option>
+                {% endfor %}
+            </select>
+            <label for="custom_name" style="margin-top:10px;">Nouveau nom</label>
+            <input type="text" name="custom_name" id="custom_name" placeholder="Nom du projet/equipe" style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.04); color: var(--text);">
+            <div class="actions" style="justify-content:flex-end; margin-top:14px;">
+                <button type="submit"><i class="fa-solid fa-save"></i> Sauvegarder</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabs = document.querySelectorAll('.tab-content');
+    tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            tabButtons.forEach(b => b.classList.remove('active'));
+            tabs.forEach(t => t.classList.remove('active'));
+            btn.classList.add('active');
+            const target = document.getElementById(btn.dataset.tabTarget);
+            if (target) target.classList.add('active');
+        });
+    });
+
+    const resetBtn = document.getElementById('resetBtn');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+            const form = document.getElementById('uploadForm');
+            form.querySelector('input[name="action"]').value = 'reset';
+            form.submit();
+        });
+    }
+
+    const sendModal = document.getElementById('sendModal');
+    const sendEmailsBtn = document.getElementById('sendEmailsBtn');
+    const closeSendModal = document.getElementById('closeSendModal');
+    const sendProgress = document.querySelector('#sendProgress span');
+    const sendProgressLabel = document.getElementById('sendProgressLabel');
+    const sendResults = document.getElementById('sendResults');
+    const senderEmail = document.getElementById('senderEmail');
+    const csrfToken = document.getElementById('csrfToken')?.value;
+
+    function openSendModal() {
+        if (!sendModal) return;
+        sendModal.classList.add('active');
+        sendProgress.style.width = '0%';
+        sendProgressLabel.textContent = 'En attente...';
+        sendResults.innerHTML = '';
+        triggerSend();
+    }
+    function closeModal(modal) {
+        modal?.classList.remove('active');
+    }
+    if (sendEmailsBtn) sendEmailsBtn.addEventListener('click', openSendModal);
+    if (closeSendModal) closeSendModal.addEventListener('click', () => closeModal(sendModal));
+    sendModal?.addEventListener('click', (e) => { if (e.target === sendModal) closeModal(sendModal); });
+
+    async function triggerSend() {
+        try {
+            if (!csrfToken) return;
+            const formData = new FormData();
+            formData.append('sender_email', senderEmail?.value || '');
+            const res = await fetch('{% url "send_emails" %}', {
+                method: 'POST',
+                headers: {'X-CSRFToken': csrfToken},
+                body: formData
+            });
+            if (!res.ok) {
+                sendProgressLabel.textContent = "Erreur pendant l'envoi.";
+                return;
+            }
+            const data = await res.json();
+            const total = data.total || 0;
+            if (total === 0) {
+                sendProgress.style.width = '100%';
+                sendProgressLabel.textContent = 'Rien a envoyer.';
+                return;
+            }
+            data.results.forEach((item, idx) => {
+                const pct = Math.round(((idx + 1) / total) * 100);
+                sendProgress.style.width = pct + '%';
+                const line = document.createElement('div');
+                line.classList.add('pill');
+                const statusIcon = item.status === 'sent' ? 'fa-check-circle' : (item.status === 'skipped' ? 'fa-circle-exclamation' : 'fa-triangle-exclamation');
+                line.innerHTML = `<i class="fa-solid ${statusIcon}"></i> ${item.name} - ${item.email || 'No email'} (${item.message})`;
+                sendResults.appendChild(line);
+                sendProgressLabel.textContent = `${idx + 1} / ${total} traites`;
+            });
+        } catch (err) {
+            sendProgressLabel.textContent = "Erreur reseau ou serveur.";
+        }
+    }
+
+    const renameModal = document.getElementById('renameModal');
+    const renameTeamBtn = document.getElementById('renameTeamBtn');
+    const closeRenameModal = document.getElementById('closeRenameModal');
+    if (renameTeamBtn) renameTeamBtn.addEventListener('click', () => renameModal?.classList.add('active'));
+    if (closeRenameModal) closeRenameModal.addEventListener('click', () => closeModal(renameModal));
+    renameModal?.addEventListener('click', (e) => { if (e.target === renameModal) closeModal(renameModal); });
+</script>
+{% endblock %}
