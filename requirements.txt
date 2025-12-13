@@ -2,7 +2,6 @@ Django
 pandas
 openpyxl
 numpy
-Django
 django-allauth
 crispy-forms
 crispy-tailwind
